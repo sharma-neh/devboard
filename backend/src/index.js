@@ -1,80 +1,93 @@
 import express from 'express'
 import cors from 'cors'
+import { PrismaClient } from '@prisma/client'
 
 const app = express()
+const prisma = new PrismaClient()
 const PORT = 3001
 
-// Middleware
 app.use(cors({ origin: 'http://localhost:5173' }))
 app.use(express.json())
 
-// Temporary in-memory data (we'll replace with PostgreSQL on Day 4)
-let standups = [
-  { id: 1, user: 'Neha', update: 'Set up the project', blockers: 'none', date: '2026-06-14' },
-  { id: 2, user: 'Neha', update: 'Built the API', blockers: 'CORS issue', date: '2026-06-15' },
-]
-
-// GET all standups
-app.get('/api/standups', (req, res) => {
-  res.json({ success: true, data: standups })
+app.get('/api/standups', async (req, res) => {
+  try {
+    const standups = await prisma.standup.findMany({
+      orderBy: { createdAt: 'desc' }
+    })
+    res.json({ success: true, data: standups })
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to fetch standups' })
+  }
 })
 
-// GET single standup by id
-app.get('/api/standups/:id', (req, res) => {
-  const standup = standups.find(s => s.id === parseInt(req.params.id))
+// GET single standup
+app.get('/api/standups/:id', async (req, res) => {
+  try {
+    const standup = await prisma.standup.findUnique({
+      where: { id: parseInt(req.params.id) }
+    })
 
-  if (!standup) {
-    return res.status(404).json({ success: false, message: 'Standup not found' })
+    if (!standup) {
+      return res.status(404).json({ success: false, message: 'Standup not found' })
+    }
+
+    res.json({ success: true, data: standup })
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to fetch standup' })
   }
-
-  res.json({ success: true, data: standup })
 })
 
 // POST create new standup
-app.post('/api/standups', (req, res) => {
-  const { user, update, blockers } = req.body
+app.post('/api/standups', async (req, res) => {
+  try {
+    const { user, update, blockers } = req.body
 
-  if (!user || !update) {
-    return res.status(400).json({ success: false, message: 'User and update are required' })
+    if (!user || !update) {
+      return res.status(400).json({ success: false, message: 'User and update are required' })
+    }
+
+    const standup = await prisma.standup.create({
+      data: {
+        user,
+        update,
+        blockers: blockers || 'none',
+        date: new Date().toISOString().split('T')[0]
+      }
+    })
+
+    res.status(201).json({ success: true, data: standup })
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to create standup' })
   }
-
-  const newStandup = {
-    id: standups.length + 1,
-    user,
-    update,
-    blockers: blockers || 'none',
-    date: new Date().toISOString().split('T')[0]
-  }
-
-  standups.push(newStandup)
-  res.status(201).json({ success: true, data: newStandup })
 })
 
 // PUT update standup
-app.put('/api/standups/:id', (req, res) => {
-  const index = standups.findIndex(s => s.id === parseInt(req.params.id))
+app.put('/api/standups/:id', async (req, res) => {
+  try {
+    const standup = await prisma.standup.update({
+      where: { id: parseInt(req.params.id) },
+      data: req.body
+    })
 
-  if (index === -1) {
-    return res.status(404).json({ success: false, message: 'Standup not found' })
+    res.json({ success: true, data: standup })
+  } catch (err) {
+    res.status(404).json({ success: false, message: 'Standup not found' })
   }
-
-  standups[index] = { ...standups[index], ...req.body }
-  res.json({ success: true, data: standups[index] })
 })
 
 // DELETE standup
-app.delete('/api/standups/:id', (req, res) => {
-  const index = standups.findIndex(s => s.id === parseInt(req.params.id))
+app.delete('/api/standups/:id', async (req, res) => {
+  try {
+    await prisma.standup.delete({
+      where: { id: parseInt(req.params.id) }
+    })
 
-  if (index === -1) {
-    return res.status(404).json({ success: false, message: 'Standup not found' })
+    res.json({ success: true, message: 'Standup deleted' })
+  } catch (err) {
+    res.status(404).json({ success: false, message: 'Standup not found' })
   }
-
-  standups.splice(index, 1)
-  res.json({ success: true, message: 'Standup deleted' })
 })
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'DevBoard API running 🚀' })
 })
